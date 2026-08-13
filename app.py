@@ -203,39 +203,48 @@ def research(
     max_steps = int(max_steps)
     max_rounds = int(max_rounds)
     use_team = mode == MODE_TEAM
-    status_lines: list[str] = [
+
+    intro_lines = [
         f"Starting {'team' if use_team else 'ReAct'} research on: {topic}",
         f"Max research steps: {max_steps}",
-        _key_status_line(api_key),
     ]
     if use_team:
-        status_lines.append(f"Max critic rounds: {max_rounds}")
+        intro_lines.append(f"Max critic rounds: {max_rounds}")
 
-    def on_status(line: str) -> None:
-        status_lines.append(redact_secrets(line, api_key))
-
-    try:
-        with openai_api_key(api_key):
+    def work(on_status):
+        try:
             if use_team:
-                result = run_team_research(
+                return run_team_research(
                     topic,
                     max_loops=max_steps,
                     max_rounds=max_rounds,
                     on_status=on_status,
                 )
-            else:
-                result = run_research(topic, max_loops=max_steps, on_status=on_status)
-    except Exception as exc:  # noqa: BLE001
-        err = (
-            f"**Error:** {redact_secrets(str(exc), api_key)}\n\n"
-            "Paste your OpenAI API key in the secure field at the top, "
-            "or set `OPENAI_API_KEY` in `.env` / Vercel env vars."
-        )
-        yield "\n".join(status_lines + [f"FAILED: {redact_secrets(str(exc), api_key)}"]), err, None
-        return
+            return run_research(topic, max_loops=max_steps, on_status=on_status)
+        except Exception as exc:  # noqa: BLE001
+            # Returned rather than raised so finish() can add the key hint.
+            return {"error": str(exc)}
 
-    report = result.get("report") or "(No report generated.)"
-    yield "\n".join(status_lines), redact_secrets(str(report), api_key), report
+    def finish(result, lines):
+        result = result or {}
+        if result.get("error"):
+            msg = redact_secrets(str(result["error"]), api_key)
+            err = (
+                f"**Error:** {msg}\n\n"
+                "Paste your OpenAI API key in the secure field at the top, "
+                "or set `OPENAI_API_KEY` in `.env` / Vercel env vars."
+            )
+            return "\n".join(lines + [f"FAILED: {msg}"]), err, None
+        report = result.get("report") or "(No report generated.)"
+        return "\n".join(lines), redact_secrets(str(report), api_key), report
+
+    yield from _stream_work(
+        work,
+        empty_outputs=("", None),
+        finish=finish,
+        intro="\n".join(intro_lines),
+        api_key=api_key,
+    )
 
 
 def save_report(report: str | None, topic: str) -> str:
