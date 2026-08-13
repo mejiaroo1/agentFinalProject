@@ -1,0 +1,330 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{enumitem}
+\usepackage{caption}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=black,
+  citecolor=blue!50!black,
+  urlcolor=blue!60!black
+}
+
+\title{Paper-with-Code Reproduction Lab:\\
+A Multi-Agent Final Project Brief}
+\author{Expanded from Deep Research Scout --- \texttt{agentProject} / \texttt{agentFinalProject}}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+This brief defines the final-project direction for expanding the existing
+\textbf{Deep Research Scout} (a single ReAct web-research agent) into a
+\textbf{multi-agent team that works in a loop}. The target system retrieves
+research papers that have \textbf{public code repositories}, lets the user
+\textbf{choose} a paper by title and keywords, then runs a
+\textbf{feasibility summarizer} that reports hardware/software needs and
+risks (large downloads, outdated stacks, incompatible hardware). If
+reproduction is impossible, the system stops with clear reasons. If the only
+blockers are soft limits (e.g.\ storage), it asks permission and---given
+approval and resources---attempts a sandboxed run, then supports
+\textbf{parameter tweaking} to explore alternate results. We survey five
+working multi-agent systems and map their lessons onto this gated
+paper$\rightarrow$repo$\rightarrow$experiment pipeline.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+%% ====================================================================
+\section{Introduction and Motivation}
+%% ====================================================================
+
+Traditional assistants answer in a single request--response turn. Agentic
+systems instead run an iterative loop: reason, act with tools, observe, and
+continue until a goal is met~\cite{blogreact}. The current
+\texttt{agentProject} already does this for \emph{one} research agent
+(LangGraph ReAct with \texttt{web\_search} / \texttt{fetch\_page}).
+
+The final project raises the bar in two ways:
+\begin{enumerate}[leftmargin=*]
+  \item \textbf{Several specialized agents} collaborating in an outer loop
+        (not one monolithic prompt).
+  \item A concrete product goal: \textbf{assisted reproduction of papers that
+        ship public code}, with human checkpoints and honest feasibility
+        gates---not a claim that every PDF can be reimplemented from prose.
+\end{enumerate}
+
+Restricting candidates to papers with a public GitHub (or equivalent) repo
+makes reproduction plausible: code, READMEs, and configs exist to analyze and
+run, instead of inventing experiments from the paper text alone.
+
+%% ====================================================================
+\section{Baseline System: Deep Research Scout}
+%% ====================================================================
+
+\subsection{Purpose}
+Given a topic, gather web evidence and produce a cited Markdown report.
+
+\subsection{Architecture}
+\begin{enumerate}[leftmargin=*]
+  \item Gradio UI (\texttt{app.py}), optional FastAPI mount.
+  \item LangGraph: \texttt{agent} $\leftrightarrow$ \texttt{tools}
+        $\rightarrow$ \texttt{finalize}.
+  \item Tools: DuckDuckGo search (\texttt{ddgs}) and page fetch
+        (\texttt{httpx} + \texttt{trafilatura}).
+  \item LLM: OpenAI via \texttt{langchain-openai} (swappable for local/free
+        models to control cost).
+\end{enumerate}
+
+\subsection{Gap}
+No paper/code filtering, no user paper selection, no feasibility verdict, no
+sandboxed experiment execution, and no parameter-sweep UI.
+
+%% ====================================================================
+\section{Five Working Multi-Agent Systems}
+%% ====================================================================
+
+Each case below is a presented or open multi-agent system with several agents
+and iterative collaboration. Lessons feed the final design.
+
+\subsection{Case 1: Magentic-One (Microsoft Research)}
+Orchestrator plans, tracks progress, and re-plans on failure; specialists
+browse, use files, or run code~\cite{magenticone}.
+\textbf{Takeaway:} manager--worker control and recovery map to our
+feasibility gate plus experiment runner.
+
+\subsection{Case 2: ChatDev (OpenBMB / Tsinghua)}
+Virtual software-company roles collaborate through chat chains across design,
+coding, and testing~\cite{chatdev}.
+\textbf{Takeaway:} clear role specialization (finder, analyst, runner,
+tweaker) beats one overloaded agent.
+
+\subsection{Case 3: MetaGPT}
+SOP-driven agents produce intermediate artifacts in a pipeline~\cite{metagpt}.
+\textbf{Takeaway:} first-class shared artifacts---candidate list, chosen
+paper, feasibility report, run log, metrics---belong in shared state.
+
+\subsection{Case 4: AutoGen (Microsoft)}
+Conversational multi-agent workflows with optional human-in-the-loop~\cite{autogen}.
+\textbf{Takeaway:} user paper choice and permission-to-run are HITL gates,
+not afterthoughts.
+
+\subsection{Case 5: CrewAI}
+Role- and task-based crews with sequential or hierarchical
+delegation~\cite{crewai}.
+\textbf{Takeaway:} ordered crew tasks match our staged pipeline while we keep
+LangGraph for orchestration continuity with the scout.
+
+\begin{table}[ht]
+\centering
+\caption{Surveyed multi-agent systems and relevance.}
+\label{tab:cases}
+\begin{tabular}{@{}llp{5.4cm}@{}}
+\toprule
+\textbf{System} & \textbf{Origin} & \textbf{Relevance to this brief} \\
+\midrule
+Magentic-One & Microsoft Research & Orchestrator + code/browser specialists \\
+ChatDev & OpenBMB / Tsinghua & Role specialization via chat phases \\
+MetaGPT & MetaGPT authors & Artifact-centric multi-agent SOPs \\
+AutoGen & Microsoft & Conversational agents + HITL \\
+CrewAI & Open source & Role/task crew pipelines \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+%% ====================================================================
+\section{Final Product Concept}
+\label{sec:concept}
+%% ====================================================================
+
+\subsection{End-to-end user journey}
+\begin{enumerate}[leftmargin=*]
+  \item \textbf{Retrieve.} The scout finds papers that explicitly have
+        public code (e.g.\ Papers with Code, arXiv/GitHub links).
+  \item \textbf{Choose (HITL \#1).} The user picks a paper from titles and
+        keywords (and short metadata such as year, venue, repo URL).
+  \item \textbf{Summarize \& assess.} A summarizer/feasibility agent
+        provides:
+        \begin{itemize}
+          \item a concise paper summary;
+          \item software/hardware requirements (Python/CUDA versions,
+                packages, estimated disk/RAM/GPU);
+          \item alarms for large downloads, old dependency pins, likely
+                incompatible hardware, missing data, unclear licenses.
+        \end{itemize}
+  \item \textbf{Verdict.}
+        \begin{description}[style=nextline,leftmargin=1.1cm]
+          \item[IMPOSSIBLE] Tell the user why and stop (e.g.\ no runnable
+                entrypoint, private dataset, multi-day multi-GPU training
+                with no small demo).
+          \item[RISKY\_BUT\_POSSIBLE] Soft limits only (storage, long but
+                finite download/runtime, outdated but replaceable pins).
+                Warn clearly.
+          \item[READY] Proceed after a light confirmation.
+        \end{description}
+  \item \textbf{Permission (HITL \#2).} If not impossible, ask the user to
+        approve resource use; only then clone/install/run in a sandbox.
+  \item \textbf{Reproduce.} Attempt baseline execution from the public repo
+        given permission and available resources.
+  \item \textbf{Tweak.} Expose key parameters; re-run; compare metrics so the
+        user can explore alternate (possibly improved) settings.
+\end{enumerate}
+
+\subsection{Hard vs soft failure policy}
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Hard (refuse):} missing code entrypoint; non-public required
+        data; unsafe or opaque binaries; compute demands far beyond the host
+        with no reduced demo path.
+  \item \textbf{Soft (warn + ask):} large disk download; long CPU jobs;
+        outdated pins that can be modernized with documented risk.
+\end{itemize}
+
+%% ====================================================================
+\section{Proposed Multi-Agent Architecture}
+%% ====================================================================
+
+\subsection{Team roles (loop-friendly)}
+\begin{description}[style=nextline,leftmargin=1.2cm]
+  \item[PaperFinder] Searches and filters to papers-with-public-code;
+        returns titles, keywords, links.
+  \item[FeasibilityAnalyst] Summarizes the chosen paper/repo; extracts
+        requirements; emits IMPOSSIBLE / RISKY\_BUT\_POSSIBLE / READY plus
+        alarms.
+  \item[ExperimentRunner] After permission: sandbox clone, dependency
+        install, baseline run; logs errors for recovery loops.
+  \item[ParamTweaker] Presents editable key parameters; re-runs; compares
+        results.
+  \item[Critic / Orchestrator (optional)] Decides retry vs stop when runs
+        fail (inspired by Magentic-One re-planning and AutoGen debate).
+\end{description}
+
+\subsection{Control flow}
+\begin{verbatim}
+START
+  -> PaperFinder (papers with public code)
+  -> USER: select paper (title / keywords)
+  -> FeasibilityAnalyst (summary + requirements + alarms)
+       |-- IMPOSSIBLE -> explain -> END
+       +-- RISKY / READY -> USER: grant permission?
+              |-- no  -> END
+              +-- yes -> ExperimentRunner
+                          -> ParamTweaker (loop: tweak -> re-run)
+                          -> Finalize results -> END
+\end{verbatim}
+
+Inner loops: Researcher-style tool use inside PaperFinder/Analyst;
+retry loops inside Runner when install/run fails but recovery is plausible.
+
+\subsection{Alignment with the chatbot-to-co-pilot blog}
+\begin{itemize}[leftmargin=*]
+  \item ReAct tool loops for search and repo inspection.
+  \item Planner-style decomposition inside Finder/Analyst.
+  \item Recursive self-correction when runs fail.
+  \item HITL for paper choice and resource-consuming actions.
+  \item Constraint enforcement: refuse impossible or unsafe jobs.
+\end{itemize}
+
+\subsection{Cost note}
+Orchestration code and free search can be \$0. LLM calls cost money unless
+a free/local model is used. Team mode uses more turns than single ReAct;
+sandbox runs cost disk/CPU/GPU on the host, not necessarily an API bill.
+
+%% ====================================================================
+\section{Implementation Status and Starting Point}
+%% ====================================================================
+
+Already available from the scout expansion:
+\begin{itemize}[leftmargin=*]
+  \item Single ReAct scout in \texttt{scout/}.
+  \item Early multi-agent scaffold in \texttt{scout\_team/}
+        (Planner / Researcher / Writer / Critic) as a stepping stone.
+  \item Gradio UI toggle between single and team modes.
+\end{itemize}
+
+Final implementation should evolve \texttt{scout\_team/} (or a successor
+package) into the PaperFinder $\rightarrow$ FeasibilityAnalyst $\rightarrow$
+Runner $\rightarrow$ Tweaker pipeline above, including HITL UI steps.
+
+%% ====================================================================
+\section{Roadmap}
+\label{sec:roadmap}
+%% ====================================================================
+
+\begin{enumerate}[leftmargin=*]
+  \item Integrate Papers-with-Code (or equivalent) retrieval + GitHub URL
+        validation.
+  \item Gradio step for paper selection (titles, keywords, repo links).
+  \item Feasibility report schema (Pydantic): summary, requirements,
+        alarms, verdict.
+  \item Permission modal for downloads/install/run.
+  \item Sandboxed clone + baseline run for a \textbf{curated} set of small
+        repos first; then broaden.
+  \item Parameter panel + comparison table for tweaks.
+  \item Evaluation: success rate of feasibility labels, fraction of allowed
+        runs that complete, user study on warning usefulness.
+\end{enumerate}
+
+%% ====================================================================
+\section{Conclusion}
+%% ====================================================================
+
+The final project keeps a multi-agent loop but grounds it in a realistic
+task: \textbf{find papers with code, let the user choose, assess
+feasibility honestly, reproduce only with permission, then tweak
+parameters}. Lessons from Magentic-One, ChatDev, MetaGPT, AutoGen, and
+CrewAI support specialized roles, shared artifacts, and human gates. This
+brief replaces an open-ended ``reproduce any paper from the PDF'' goal with
+a scoped, buildable agentic lab.
+
+%% ====================================================================
+\begin{thebibliography}{99}
+
+\bibitem{blogreact}
+``From Chatbot to Co-pilot: Evolving Your AI Assistant into an Agentic System.''
+Course blog artifact (\texttt{blog\_output\_20260721\_114058\_863494}).
+
+\bibitem{magenticone}
+A.~Fourney et~al.
+``Magentic-One: A Generalist Multi-Agent System for Solving Complex Tasks.''
+Microsoft Research, 2024.
+\url{https://aka.ms/magentic-one}
+
+\bibitem{chatdev}
+C.~Qian et~al.
+``ChatDev: Communicative Agents for Software Development.''
+arXiv:2307.07924, 2023.
+\url{https://arxiv.org/abs/2307.07924}
+
+\bibitem{metagpt}
+S.~Hong et~al.
+``MetaGPT: Meta Programming for A Multi-Agent Collaborative Framework.''
+arXiv:2308.00352, 2023.
+\url{https://arxiv.org/abs/2308.00352}
+
+\bibitem{autogen}
+Q.~Wu et~al.
+``AutoGen: Enabling Next-Gen LLM Applications via Multi-Agent Conversation.''
+arXiv:2308.08155, 2023.
+\url{https://arxiv.org/abs/2308.08155}
+
+\bibitem{crewai}
+CrewAI documentation and open-source framework for role-based multi-agent crews.
+\url{https://docs.crewai.com/}
+
+\bibitem{paperswithcode}
+Papers with Code --- linking research papers to official implementations.
+\url{https://paperswithcode.com/}
+
+\end{thebibliography}
+
+\end{document}

@@ -1,0 +1,82 @@
+1. Magentic-One (Microsoft Research)
+
+* Count: About 5 agents total.
+    - Orchestrator (lead)
+    - WebSurfer (browser)
+    - FileSurfer (local files)
+    - Coder (write/analyze code)
+    - ComputerTerminal (run code / shell)
+
+Collaboration:
+  The orchestrator writes a plan and a progress ledger, then assigns
+  the next subtask to whichever specialist fits. After each handoff it checks
+  progress; if things stall, it replans. Specialists work when called, not on their own.
+
+
+2. ChatDev (OpenBMB / Tsinghua)
+
+* Count: About 5 core roles in the common paper setup.
+    - CEO
+    - CTO
+    - Programmer
+    - Reviewer
+    - Tester
+
+Collaboration:
+  Agents act like a small software company. Work is split into phases as they would in a
+  scrum environment. (design → code → test). Inside each subtask, usually two agents talk in
+  turns. One instructs, one assists, etc. until they agree. Collaboration is
+  chat-based and sequential using ChatChain, not just one manager silently dispatching
+  tools. "Communicative dehallucination" pushes agents to ask for detail
+  before answering.
+
+3. MetaGPT
+
+* Count: A full "company" cast (often ~half a dozen or more depending on config).
+    Typical roles include Product Manager, Architect, Engineer, and QA/reviewer-
+    style agents (exact set is configurable).
+
+Collaboration:
+  Less free-form debate, more assembly line. Agents follow prompts
+  and pass structured artifacts one might expect in a company down the line. Review/QA
+  roles check quality. Collaboration is role + document handoff, inspired by
+  real engineering process.
+
+
+4. AutoGen (Microsoft)
+
+* Count: Flexible — you define the team. Common demos use 3–5 agents
+    (e.g. researcher, writer, critic) plus an optional human proxy. A Group Chat
+    Manager is another coordinating role.
+
+Collaboration:
+  Agents share one conversation thread and take turns. A manager picks who
+  speaks next (round-robin, LLM selector, etc.). They debate and refine until
+  a stop condition (approval phrase, max rounds, or human stop). Collaboration
+  feels like a meeting, not a strict pipeline. Strong fit for human-in-the-loop.
+
+5. CrewAI
+
+* Count: You choose crew size. Typical examples use 2–4 agents
+    (e.g. researcher, writer, editor; or manager + specialists).
+
+Collaboration:
+  Each agent has a role, goal, and tools. Tasks are assigned explicitly.
+  Default mode is sequential (A finishes → B starts). Hierarchical mode adds
+  a manager that delegates. Collaboration is task/crew oriented: clear jobs
+  and deliverables more than open chat.
+
+Big picture
+-----------
+Most real systems use a small team (roughly 3–6 agents), not dozens.
+
+Common collaboration patterns:
+  - Manager → specialists (Orchestrator assigns) --> Magentic-One
+  - Pipeline / SOPs (fixed stage order) --> MetaGPT, CrewAI sequential
+  - Pair chat in phases (instructor ↔ assistant) --> ChatDev
+  - Group meeting (manager or turn-taking) --> AutoGen
+
+Relevance to agentFinalProject (paper-with-code lab):
+  Magentic-One and CrewAI map cleanly to Finder → Analyst → Runner → Tweaker
+  with a human in the loop. ChatDev/AutoGen motivate "talk until we agree /
+  ask the user" moments (paper pick + permission to run).

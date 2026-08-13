@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+.env.local
+.env.*.local
+outputs/*.md
+.pytest_cache/
+*.egg-info/
+.gradio/
+runs/
+.vercel/
+.DS_Store

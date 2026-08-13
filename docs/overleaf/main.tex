@@ -1,0 +1,513 @@
+%% RePLab — Overleaf scientific short paper (CHAINS-style structure)
+%% Upload this folder to Overleaf as a new project, or paste main.tex as the sole source.
+%% Edit \author fields before submission.
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{enumitem}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage{setspace}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=black,
+  citecolor=blue!50!black,
+  urlcolor=blue!60!black
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small RePLab: HITL Multi-Agent Paper Reproduction}
+\fancyhead[R]{\small Final Project Report}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\title{\textbf{RePLab:} A Human-in-the-Loop Multi-Agent System\\
+for Finding, Assessing, and Reproducing Papers with Public Code}
+\author{
+  %% --- edit before submission ---
+  Oscar\\
+  Department of Computer Science\\
+  %% University / Program
+  Master's Web Development / Agentic AI Final Project\\
+  \texttt{[email@university.edu]}
+}
+\date{}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Large Language Model (LLM) agents can accelerate literature search and experiment
+prototyping, yet end-to-end ``reproduce the paper'' prompts often yield
+non-executable text, unsupported claims, and unsafe or wasteful host actions.
+This paper presents \textbf{RePLab} (Paper-with-Code Reproduction Lab), a
+Human-in-the-Loop (HITL) multi-agent environment that restricts candidates to
+research papers with \emph{public code repositories} and decomposes reproduction
+into inspectable stages: paper retrieval with code validation, user selection,
+deterministic-plus-LLM feasibility analysis, permission-gated sandboxed
+execution, and parameter tweaking with comparison. Each stage emits typed
+artifacts (candidates, feasibility reports, run logs, metrics) under an explicit
+verdict policy (\texttt{IMPOSSIBLE}, \texttt{RISKY\_BUT\_POSSIBLE}, \texttt{READY}).
+A hybrid deployment model exposes search and analysis on serverless hosts while
+keeping clone/install/run local under Docker. We situate RePLab relative to
+prior agentic research systems, specify an evaluation protocol under matched
+budgets, and report a design walkthrough of the implemented LangGraph/Gradio
+system. RePLab treats agents as coordinated, governable components---not opaque
+replacements---for accountable scientific code reproduction.
+\end{abstract}
+
+\noindent\textbf{Keywords:}
+Agentic AI; Multi-Agent Systems; Human-in-the-Loop; Scientific Reproducibility;
+Papers with Code; LangGraph; Docker Sandboxing; Digital Society Systems.
+
+%% ========================================================================
+\section{Introduction and Motivation}
+\label{sec:intro}
+%% ========================================================================
+
+Scientific workflows increasingly rely on LLM assistants for literature review,
+summarization, and coding support. Prompt-only pipelines, however, frequently
+provide limited provenance, weak reproducibility, and few safeguards against
+unsupported claims or high-risk actions on the researcher's machine~\cite{chains2026,react}.
+In particular, asking a single model to ``reproduce this paper'' tends to
+produce \emph{paper-shaped text}: fluent narratives that look like experimental
+results but are not grounded in an executable public codebase.
+
+Reproducibility in machine learning and related fields is already fragile when
+code, data, and environment pins are incomplete~\cite{pineau2021}. Agentic
+systems amplify both opportunity and risk: they can search, clone, install, and
+run software autonomously, which makes \emph{governance}---when the human must
+approve resource-consuming or irreversible steps---a first-class design
+requirement rather than an afterthought~\cite{autogen,chains2026}.
+
+This work introduces \textbf{RePLab}, a gated multi-agent lab with three design
+commitments:
+\begin{enumerate}[leftmargin=*,itemsep=2pt]
+  \item \textbf{Code-anchored candidates.} Only papers with validated public
+        GitHub (or equivalent) repositories enter the working set.
+  \item \textbf{Honest feasibility before execution.} A structured verdict
+        stops impossible jobs and warns on soft risks before any clone/run.
+  \item \textbf{Explicit HITL gates.} The human selects the paper and must
+        approve sandboxed reproduction; agents do not silently consume disk,
+        CPU/GPU, or network quotas.
+\end{enumerate}
+
+RePLab is implemented as a Gradio application with FastAPI packaging for hybrid
+cloud deployment, LangGraph-based research scouts, and a staged reproduction
+crew (\texttt{PaperFinder}, \texttt{FeasibilityAnalyst},
+\texttt{ExperimentRunner}, \texttt{ParamTweaker}). The system is intended for
+student and laboratory settings where transparency and safety matter as much as
+automation.
+
+%% ========================================================================
+\section{Background and Related Work}
+\label{sec:background}
+%% ========================================================================
+
+\subsection{Definitions}
+\begin{description}[style=nextline,leftmargin=1.2cm,itemsep=2pt]
+  \item[Agentic AI]
+    Specialized LLM agents that plan, call tools, and iterate until a goal is
+    met~\cite{react}.
+  \item[Artifact-driven workflow]
+    Intermediate outputs (plans, notes, reports, logs) are persisted as typed,
+    inspectable artifacts rather than discarded chat turns~\cite{metagpt,chains2026}.
+  \item[Human-in-the-Loop (HITL)]
+    Humans retain authority to select, approve, decline, or stop agent actions
+    at critical checkpoints~\cite{autogen,chains2026}.
+  \item[Deterministic verification]
+    Rule-based (non-generative) checks---e.g., entrypoint file existence,
+    dependency presence---that constrain or override LLM suggestions.
+\end{description}
+
+\subsection{Multi-agent collaboration patterns}
+Prior systems illustrate recurring organizational patterns that inform RePLab:
+\begin{itemize}[leftmargin=*,itemsep=2pt]
+  \item \textbf{Orchestrator + specialists} (Magentic-One): a lead agent plans
+        and reassigns browser/file/code tools~\cite{magenticone}.
+  \item \textbf{Role chat / SOPs} (ChatDev, MetaGPT): software-company roles
+        and document handoffs~\cite{chatdev,metagpt}.
+  \item \textbf{Conversational teams + HITL} (AutoGen): multi-agent meetings
+        with optional human proxies~\cite{autogen}.
+  \item \textbf{Task crews} (CrewAI): explicit role--task pipelines~\cite{crewai}.
+  \item \textbf{Research swarms with manifests} (CHAINS): planning, retrieval,
+        gap finding, micro-experiments, drafting, critique, and deterministic
+        verification under a run manifest~\cite{chains2026}.
+\end{itemize}
+RePLab adopts CHAINS' emphasis on HITL, artifacts, and non-generative checks,
+but specializes the product goal: \emph{code-backed reproduction} with Docker
+sandboxing, rather than end-to-end paper drafting from knowledge gaps.
+
+\subsection{Papers with code}
+Linking publications to official implementations improves the chance that
+reproduction is even possible~\cite{paperswithcode}. RePLab therefore treats
+public repositories as a hard eligibility filter, not a nice-to-have metadata
+field.
+
+%% ========================================================================
+\section{Research Questions}
+\label{sec:rqs}
+%% ========================================================================
+
+\begin{description}[style=nextline,leftmargin=1.35cm,itemsep=4pt]
+  \item[RQ1 (Operationalization)]
+    How effectively can a staged agent pipeline turn a topic query into a
+    \emph{runnable} paper-with-code candidate set with explicit feasibility
+    labels?
+  \item[RQ2 (Transparency)]
+    Does an artifact-driven, verdict-gated workflow improve inspectability and
+    failure localization compared with a single LLM prompt that claims to
+    reproduce a paper?
+  \item[RQ3 (Trust and safety)]
+    How do HITL checkpoints (paper selection; permission to clone/install/run)
+    influence prevention of impossible or unsafe executions and user control
+    over resource use?
+\end{description}
+
+%% ========================================================================
+\section{System Architecture}
+\label{sec:arch}
+%% ========================================================================
+
+Figure~\ref{fig:arch} summarizes the deployment and control planes.
+
+\begin{figure}[t]
+\centering
+\fbox{\parbox{0.92\linewidth}{\centering\small
+\textbf{UI (Gradio)} --- secure API-key field; Reproduction Lab; Research Scout\\[4pt]
+$\downarrow$\\[2pt]
+\textbf{ASGI (FastAPI)} --- hybrid Vercel packaging; security headers\\[4pt]
+$\downarrow$\\[2pt]
+\begin{tabular}{@{}c@{\hspace{1.2em}}c@{}}
+\textbf{RePLab crew} & \textbf{Scout graphs} \\
+Finder $\rightarrow$ Analyst & Single ReAct \\
+$\rightarrow$ Runner $\rightarrow$ Tweaker & Planner--Researcher--Writer--Critic \\
+\end{tabular}\\[4pt]
+$\downarrow$\\[2pt]
+\textbf{External services:} OpenAI; OpenAlex; arXiv; Semantic Scholar; GitHub\\[2pt]
+\textbf{Local sandbox:} Docker (\texttt{python:3.11-slim}); \texttt{runs/} artifacts
+}}
+\caption{RePLab system architecture: UI orchestration, agent crews, external APIs, and local Docker sandbox.}
+\label{fig:arch}
+\end{figure}
+
+\subsection{Technology stack}
+\begin{itemize}[leftmargin=*,itemsep=2pt]
+  \item \textbf{Frontend / UX:} Gradio with live ``Reasoning:'' status streaming
+        (no opaque progress-only bars).
+  \item \textbf{Packaging:} FastAPI mounts the Gradio app for ASGI deploy;
+        \texttt{vercel.json} configures duration/memory and basic security
+        headers.
+  \item \textbf{Orchestration:} staged Python agents in \texttt{replab/};
+        LangGraph for optional research scouts.
+  \item \textbf{Schemas:} Pydantic models for candidates, feasibility,
+        entrypoint plans, run results, and tweak plans.
+  \item \textbf{Secrets:} request-scoped API-key override (password field);
+        keys are not written to \texttt{.env} from the UI, run folders, or
+        reports; status text is redacted against key-shaped substrings.
+\end{itemize}
+
+\subsection{Hybrid deploy matrix}
+Serverless environments can host search and feasibility, but not long-running
+Docker builds. RePLab therefore uses an explicit hybrid policy
+(Table~\ref{tab:hybrid}).
+
+\begin{table}[ht]
+\centering
+\caption{Hybrid capability matrix.}
+\label{tab:hybrid}
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Stage} & \textbf{Local} & \textbf{Serverless (e.g., Vercel)} \\
+\midrule
+Find papers + feasibility & Yes & Yes \\
+HITL select / permission UI & Yes & Yes \\
+Docker clone / install / run & Yes & No (emit local commands) \\
+Parameter re-runs & Yes & No \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+%% ========================================================================
+\section{Multi-Agent Workflow}
+\label{sec:workflow}
+%% ========================================================================
+
+\subsection{Reproduction Lab crew}
+The primary product path is a four-agent (plus tooling) pipeline:
+
+\begin{description}[style=nextline,leftmargin=1.35cm,itemsep=3pt]
+  \item[PaperFinder]
+    Queries \textbf{OpenAlex} as primary source (arXiv-linked works with GitHub
+    signals), then arXiv / Semantic Scholar when needed; validates repositories
+    via the GitHub API; screens feasibility during search; ranks
+    \texttt{READY} before \texttt{RISKY}, then by year and stars.
+  \item[FeasibilityAnalyst]
+    Emits a structured \texttt{FeasibilityReport}: summary, Python/CUDA/package
+    needs, size/runtime estimates, alarms, entrypoint, and verdict. Deterministic
+    repo signals (README, requirements, tree, CUDA hints) are merged with optional
+    LLM structuring; hallucinated entrypoints that do not exist on disk (via API
+    tree) are rejected.
+  \item[ExperimentRunner]
+    After permission: stages under \texttt{runs/in\_progress/}, shallow-clones,
+    prepares an entrypoint command (AST argparse/click parsing, README demos,
+    Streamlit headless handling), runs inside Docker with memory/CPU limits and
+    timeouts, retries once with deterministic then LLM repair suggestions, and
+    archives to \texttt{runs/successful/} or \texttt{runs/failed/}.
+  \item[ParamTweaker]
+    Proposes a small editable parameter set, re-invokes the runner with
+    overrides, and formats a baseline-vs-tweaked comparison table.
+\end{description}
+
+\textbf{HITL gate~1 --- selection.} The user chooses a paper from a screened
+table (title, year, verdict, entrypoint, repo).\\
+\textbf{HITL gate~2 --- permission.} Clone/install/run proceeds only if the
+user checks an explicit approval control and the verdict is not
+\texttt{IMPOSSIBLE}.
+
+\subsection{Verdict policy}
+\begin{itemize}[leftmargin=*,itemsep=2pt]
+  \item \texttt{IMPOSSIBLE}: missing runnable entrypoint, stub-only repo,
+        private required data, or no reduced demo path for extreme compute ---
+        \emph{stop}.
+  \item \texttt{RISKY\_BUT\_POSSIBLE}: soft limits (CUDA likely, large downloads,
+        outdated pins, long runtime) --- \emph{warn and require permission}.
+  \item \texttt{READY}: plausible minimal path --- \emph{confirm and run}.
+\end{itemize}
+
+\subsection{Entrypoint intelligence}
+A dedicated preflight module sanitizes commands, resolves script paths, parses
+CLI arguments from source, fills required positionals from documentation
+examples, and avoids trusting raw LLM command strings. This deterministic layer
+is RePLab's analogue of CHAINS' non-generative verifier, applied to
+\emph{execution readiness} rather than citation structure.
+
+\subsection{Optional Research Scout}
+For literature synthesis (not reproduction), RePLab retains:
+\begin{itemize}[leftmargin=*,itemsep=2pt]
+  \item a \textbf{single ReAct} scout (\texttt{web\_search}, \texttt{fetch\_page});
+  \item a \textbf{team} graph: Planner $\rightarrow$ Researcher $\leftrightarrow$
+        tools $\rightarrow$ Writer $\rightarrow$ Critic (retry/ok) $\rightarrow$
+        finalize.
+\end{itemize}
+These paths share the secure API-key plumbing and produce Markdown reports under
+\texttt{outputs/}.
+
+\subsection{End-to-end control flow}
+\begin{verbatim}
+START
+  -> PaperFinder (OpenAlex-first; GitHub validated; feasibility screen)
+  -> USER: select paper                         # HITL #1
+  -> FeasibilityAnalyst (typed report + verdict)
+       |-- IMPOSSIBLE -> explain -> END
+       +-- RISKY / READY -> USER: approve run?  # HITL #2
+              |-- no  -> END
+              +-- yes -> ExperimentRunner (Docker, local)
+                          -> ParamTweaker (tweak -> re-run -> compare)
+                          -> archive artifacts -> END
+\end{verbatim}
+
+%% ========================================================================
+\section{Evaluation Protocol and Quality Metrics}
+\label{sec:metrics}
+%% ========================================================================
+
+Following CHAINS' practice of defining measurable proxies before claiming
+superiority~\cite{chains2026}, we specify a protocol comparing RePLab to an
+\textbf{LLM-only baseline} (single prompt: search + summarize + ``reproduce'')
+under matched model, token, and wall-clock budgets.
+
+\subsection{Proposed metrics}
+\begin{description}[style=nextline,leftmargin=1.4cm,itemsep=3pt]
+  \item[WCR (Workflow Completion Rate)]
+    Fraction of topics for which the pipeline reaches a terminal state with all
+    required artifacts present (candidate list, feasibility report; and, if
+    permitted, run archive).
+  \item[ABI (Artifact Bundle Integrity)]
+    Fraction of required typed fields present and schema-valid (title, repo URL,
+    verdict, entrypoint or explicit impossibility reason, run log path when
+    executed).
+  \item[FLA (Feasibility Label Agreement)]
+    Agreement between system verdicts and a human rater on a held-out set
+    (Cohen's $\kappa$), with disagreement analysis on entrypoint and data
+    availability.
+  \item[RCP (Run Completion under Permission)]
+    Among user-approved, non-\texttt{IMPOSSIBLE} cases, fraction that exit with
+    success criteria (process exit code 0 or documented soft-success, e.g.,
+    Streamlit smoke boot).
+  \item[HITL-SE (HITL Safety Efficiency)]
+    Rate of prevented high-risk actions: attempts blocked by
+    \texttt{IMPOSSIBLE} or missing permission, plus false-allow incidents
+    (should have been blocked).
+  \item[GAS-lite (Grounding Accuracy Score, lite)]
+    Sampled audit: do feasibility claims (entrypoint, CUDA need, key packages)
+    match repository evidence?
+\end{description}
+
+\subsection{Procedure}
+For $N$ topics spanning NLP, vision, and time-series demos:
+(1)~run baseline and RePLab under matched budgets;
+(2)~score WCR/ABI automatically from artifacts;
+(3)~double-annotate FLA/GAS-lite on a subsample;
+(4)~record latency, token use, and HITL decision times.
+This protocol is specified for reproducibility of the \emph{evaluation design};
+large-scale numerical benchmarking remains future coursework/lab work
+(Section~\ref{sec:limits}).
+
+%% ========================================================================
+\section{Demonstration and Qualitative Findings}
+\label{sec:results}
+%% ========================================================================
+
+We demonstrate RePLab through an implemented end-to-end system and smoke checks
+rather than claiming a finished multi-topic benchmark.
+
+\subsection{Implemented capabilities}
+\begin{itemize}[leftmargin=*,itemsep=2pt]
+  \item OpenAlex-first retrieval with rate-limit aware backoff and optional
+        Semantic Scholar / GitHub tokens.
+  \item Search-time feasibility screening so the UI preferentially shows
+        runnable candidates.
+  \item Live reasoning traces in the UI for finder, analyst, runner, and
+        tweaker stages.
+  \item Docker-bounded execution with archival under \texttt{runs/successful}
+        and \texttt{runs/failed}.
+  \item Success narration that explains, in plain language, what ran and why
+        arguments matter.
+  \item Integration smoke script validating finder/analyst paths and a minimal
+        Docker invocation when the engine is available.
+\end{itemize}
+
+\subsection{Qualitative observations (design walkthrough)}
+\begin{enumerate}[leftmargin=*,itemsep=3pt]
+  \item \textbf{Paper-shaped text vs.\ executable path.}
+        LLM-only baselines readily invent train commands; RePLab's file-existence
+        checks and AST CLI parsing reduce command hallucination before Docker.
+  \item \textbf{Failure localization.}
+        Separating find / assess / run / tweak makes it obvious whether a
+        session failed due to retrieval, feasibility, missing permission, or
+        sandbox errors---unlike a single chat transcript.
+  \item \textbf{Governance value of HITL.}
+        Permission gating prevents accidental multi-gigabyte clones and long
+        installs when the user only intended to browse candidates.
+  \item \textbf{Hybrid realism.}
+        Cloud UIs are useful for discovery; honest ``run locally'' messaging
+        avoids pretending serverless hosts can replace laboratory machines.
+\end{enumerate}
+
+These observations align with CHAINS' findings that structured, artifact-centric
+workflows improve auditability relative to black-box generation~\cite{chains2026},
+while specializing the claim to \emph{code reproduction}.
+
+%% ========================================================================
+\section{Limitations and Future Work}
+\label{sec:limits}
+%% ========================================================================
+
+\begin{itemize}[leftmargin=*,itemsep=2pt]
+  \item \textbf{Preliminary evaluation.} Metrics in Section~\ref{sec:metrics}
+        are specified; full matched-budget scoring across diverse domains is
+        not yet reported.
+  \item \textbf{Semantic truthfulness.} Deterministic checks and GAS-lite do
+        not guarantee that a successful smoke run equals a faithful paper
+        result (metrics extraction is heuristic).
+  \item \textbf{Environment coverage.} The default image targets CPU Python
+        demos; CUDA-heavy repositories are often labeled \texttt{RISKY} and may
+        still fail without host GPU passthrough and specialized images.
+  \item \textbf{Data and licenses.} Private datasets, gated downloads, and
+        unclear licenses remain hard stops or manual steps.
+  \item \textbf{Scale and comparison.} Broader benchmarking against Magentic-One,
+        AutoGen, CrewAI, and CHAINS-style research swarms is future work.
+\end{itemize}
+
+\noindent\textbf{Future directions:} stronger semantic grounding of feasibility
+claims; richer dataset tooling; GPU-aware runners; signed run manifests with
+content hashes (closer to CHAINS' telemetry); and user studies on warning
+usefulness and trust.
+
+%% ========================================================================
+\section{Conclusion}
+\label{sec:conclusion}
+%% ========================================================================
+
+RePLab frames AI agents not as opaque end-to-end replacements for scientific
+reproduction, but as \textbf{coordinated components in a human-governed,
+code-anchored workflow}. By combining specialized agents, typed artifacts,
+deterministic entrypoint verification, Docker sandboxing, and explicit HITL
+gates, the system prioritizes transparency, traceability, and controlled
+execution---prerequisites for responsible AI assistance in laboratory and
+classroom settings. The core lesson mirrors CHAINS while narrowing the task:
+\emph{accountable reproduction begins with public code, honest feasibility, and
+permission---not with a single generative claim that an experiment ``worked.''}
+
+\section*{Acknowledgments}
+This report was prepared as a Master's final project artifact for an agentic AI /
+web development coursework setting. The design is informed by CHAINS and related
+multi-agent research systems cited herein.
+
+%% ========================================================================
+\begin{thebibliography}{99}
+
+\bibitem{chains2026}
+W.~Villalobos, Y.~Kumar, J.~Marchena, J.~J.~Li, and D.~Kruger.
+``Collaborative Human-`AI ageNt Swarm' (CHAINS) for Conducting Scientific Research.''
+In \emph{ICDS 2026}, ThinkMind / IARIA, Venice, Italy, 2026, pp.~8--15.
+\url{https://www.thinkmind.org/library/ICDS/ICDS_2026/icds_2026_1_30_10034.html}
+
+\bibitem{react}
+S.~Yao, J.~Zhao, D.~Yu, N.~Du, I.~Shafran, K.~Narasimhan, and Y.~Cao.
+``ReAct: Synergizing Reasoning and Acting in Language Models.''
+In \emph{ICLR}, 2023.
+\url{https://arxiv.org/abs/2210.03629}
+
+\bibitem{pineau2021}
+J.~Pineau et~al.
+``Improving Reproducibility in Machine Learning Research (A Report from the NeurIPS 2019 Reproducibility Program).''
+\emph{Journal of Machine Learning Research}, 22(164):1--20, 2021.
+
+\bibitem{magenticone}
+A.~Fourney et~al.
+``Magentic-One: A Generalist Multi-Agent System for Solving Complex Tasks.''
+Microsoft Research, 2024.
+\url{https://aka.ms/magentic-one}
+
+\bibitem{chatdev}
+C.~Qian et~al.
+``ChatDev: Communicative Agents for Software Development.''
+arXiv:2307.07924, 2023.
+
+\bibitem{metagpt}
+S.~Hong et~al.
+``MetaGPT: Meta Programming for A Multi-Agent Collaborative Framework.''
+arXiv:2308.00352, 2023.
+
+\bibitem{autogen}
+Q.~Wu et~al.
+``AutoGen: Enabling Next-Gen LLM Applications via Multi-Agent Conversation.''
+arXiv:2308.08155, 2023.
+
+\bibitem{crewai}
+CrewAI documentation.
+\url{https://docs.crewai.com/}
+
+\bibitem{paperswithcode}
+Papers with Code.
+\url{https://paperswithcode.com/}
+
+\end{thebibliography}
+
+\end{document}
