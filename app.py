@@ -11,19 +11,44 @@ from pathlib import Path
 from queue import Empty, Queue
 from typing import Any, Callable, Generator
 
-import gradio as gr
 from dotenv import load_dotenv
 
-from scout.graph import run_research
-from scout_team.graph import run_team_research
-from replab.analyst import analyze_feasibility
-from replab.finder import find_papers_with_code
-from replab.llm import get_api_key, looks_like_openai_key, on_vercel, openai_api_key, redact_secrets
-from replab.runner import docker_available, local_run_instructions, run_experiment
-from replab.schemas import FeasibilityReport, PaperCandidate, RunResult, Verdict
-from replab.tweaker import extract_parameters, format_comparison, run_with_overrides
+from envsafe import drop_blank_numeric_vars
 
+# Must run before importing gradio: it parses GRADIO_SERVER_PORT at import time
+# and a blank value (easy to create in a hosting dashboard) raises ValueError.
 load_dotenv()
+drop_blank_numeric_vars()
+
+import gradio as gr  # noqa: E402
+
+from scout.graph import run_research  # noqa: E402
+from scout_team.graph import run_team_research  # noqa: E402
+from replab.analyst import analyze_feasibility  # noqa: E402
+from replab.finder import find_papers_with_code  # noqa: E402
+from replab.llm import (  # noqa: E402
+    get_api_key,
+    looks_like_openai_key,
+    on_vercel,
+    openai_api_key,
+    redact_secrets,
+)
+from replab.runner import (  # noqa: E402
+    docker_available,
+    local_run_instructions,
+    run_experiment,
+)
+from replab.schemas import (  # noqa: E402
+    FeasibilityReport,
+    PaperCandidate,
+    RunResult,
+    Verdict,
+)
+from replab.tweaker import (  # noqa: E402
+    extract_parameters,
+    format_comparison,
+    run_with_overrides,
+)
 
 ROOT = Path(__file__).resolve().parent
 OUTPUTS = ROOT / "outputs"
