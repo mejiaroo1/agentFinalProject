@@ -12,7 +12,7 @@ from langchain_openai import ChatOpenAI
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode
 
-from replab.llm import get_api_key, require_api_key
+from replab.llm import get_api_key, openai_model, require_api_key
 from scout.tools import AGENT_TOOLS, sources_from_tool_content
 from scout_team.prompts import (
     CRITIC_SYSTEM,
@@ -30,7 +30,7 @@ StatusCallback = Callable[[str], None]
 def _cfg() -> dict[str, Any]:
     return {
         "api_key": get_api_key(),
-        "model": os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+        "model": openai_model(),
         "max_steps": int(os.getenv("MAX_AGENT_STEPS", os.getenv("MAX_LOOPS", "8"))),
         "max_rounds": int(os.getenv("MAX_TEAM_ROUNDS", "2")),
     }

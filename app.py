@@ -13,12 +13,12 @@ from typing import Any, Callable, Generator
 
 from dotenv import load_dotenv
 
-from envsafe import drop_blank_numeric_vars
+from envsafe import sanitize_env
 
 # Must run before importing gradio: it parses GRADIO_SERVER_PORT at import time
 # and a blank value (easy to create in a hosting dashboard) raises ValueError.
 load_dotenv()
-drop_blank_numeric_vars()
+sanitize_env()
 
 import gradio as gr  # noqa: E402
 
@@ -31,6 +31,7 @@ from replab.llm import (  # noqa: E402
     looks_like_openai_key,
     on_vercel,
     openai_api_key,
+    openai_model,
     redact_secrets,
 )
 from replab.runner import (  # noqa: E402
@@ -564,7 +565,7 @@ def lab_tweak(paper_state, params_json: str, permission: bool, api_key: str | No
 
 
 def build_ui() -> gr.Blocks:
-    model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    model = openai_model()
     hosted = ON_VERCEL or on_vercel()
     if hosted:
         env_note = "**Hosted on Vercel — reproduction runs are localhost-only.**"
@@ -598,10 +599,6 @@ LLM: **OpenAI** (`{model}`). {env_note}
                 ),
                 lines=1,
                 max_lines=1,
-            )
-            gr.Markdown(
-                "Get a key at [platform.openai.com/api-keys](https://platform.openai.com/api-keys). "
-                "On Vercel, you can also set `OPENAI_API_KEY` in Project → Settings → Environment Variables."
             )
 
         with gr.Tab("Reproduction Lab"):

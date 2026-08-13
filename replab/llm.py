@@ -19,9 +19,21 @@ _api_key_override: ContextVar[str | None] = ContextVar("openai_api_key_override"
 
 _PLACEHOLDER_KEYS = {"", "sk-your-key-here", "sk-your-key", "your-key-here"}
 
+DEFAULT_MODEL = "gpt-4o-mini"
+
 
 def on_vercel() -> bool:
     return bool(os.getenv("VERCEL"))
+
+
+def openai_model() -> str:
+    """Model name, falling back when OPENAI_MODEL is missing *or* blank.
+
+    A hosting dashboard can define the variable with an empty value, which
+    os.getenv's default does not cover; an empty model reaches the API as
+    "you must provide a model parameter".
+    """
+    return (os.getenv("OPENAI_MODEL") or "").strip() or DEFAULT_MODEL
 
 
 def _normalize_key(key: str | None) -> str:
@@ -89,7 +101,7 @@ def redact_secrets(text: str, key: str | None = None) -> str:
 def llm(temperature: float = 0.2) -> ChatOpenAI:
     key = require_api_key()
     return ChatOpenAI(
-        model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+        model=openai_model(),
         api_key=key,
         temperature=temperature,
     )

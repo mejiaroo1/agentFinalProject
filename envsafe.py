@@ -25,16 +25,23 @@ NUMERIC_VARS: tuple[str, ...] = (
     "STREAMLIT_SMOKE_TIMEOUT_OK",
 )
 
+# Blank values here are equally harmful: an empty model name reaches the OpenAI
+# API as "you must provide a model parameter".
+TEXT_VARS: tuple[str, ...] = (
+    "OPENAI_MODEL",
+    "OPENAI_API_KEY",
+    "GITHUB_TOKEN",
+    "SEMANTIC_SCHOLAR_API_KEY",
+    "S2_API_KEY",
+)
+
 
 def _is_intlike(raw: str) -> bool:
     return raw.strip().lstrip("+-").isdigit()
 
 
 def drop_blank_numeric_vars(names: tuple[str, ...] = NUMERIC_VARS) -> list[str]:
-    """Unset numeric env vars whose value is blank or not an integer.
-
-    Returns the names that were removed, for logging.
-    """
+    """Unset numeric env vars whose value is blank or not an integer."""
     dropped: list[str] = []
     for name in names:
         raw = os.environ.get(name)
@@ -43,3 +50,20 @@ def drop_blank_numeric_vars(names: tuple[str, ...] = NUMERIC_VARS) -> list[str]:
         del os.environ[name]
         dropped.append(name)
     return dropped
+
+
+def drop_blank_text_vars(names: tuple[str, ...] = TEXT_VARS) -> list[str]:
+    """Unset text env vars defined as an empty / whitespace-only string."""
+    dropped: list[str] = []
+    for name in names:
+        raw = os.environ.get(name)
+        if raw is None or raw.strip():
+            continue
+        del os.environ[name]
+        dropped.append(name)
+    return dropped
+
+
+def sanitize_env() -> list[str]:
+    """Drop every unusable env var. Returns the names removed, for logging."""
+    return drop_blank_numeric_vars() + drop_blank_text_vars()
